@@ -84,6 +84,7 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
         filter_expression="DomainUserLogin eq 'jpierzchala'",
         order_by=["@search.score desc"],
         facets=["DomainUserLogin,count:10"],
+        vector_filter_mode="preFilter",
         search_mode="all",
         search_fields=[],
         vector_fields=[],
@@ -112,6 +113,7 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert call_kwargs["filter"] == "DomainUserLogin eq 'jpierzchala'"
     assert call_kwargs["order_by"] == ["@search.score desc"]
     assert call_kwargs["facets"] == ["DomainUserLogin,count:10"]
+    assert call_kwargs["vector_filter_mode"] == "preFilter"
 
     vector_queries = call_kwargs["vector_queries"]
     assert len(vector_queries) == 2

@@ -163,6 +163,18 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 ),
             ),
         ] = None,
+        vector_filter_mode: Annotated[
+            Optional[str],
+            Field(
+                default=None,
+                description=(
+                    "Optional vector filter mode. Use `preFilter` to apply filters during HNSW traversal (higher recall, higher latency), "
+                    "`postFilter` to filter per shard after traversal (faster but can miss highly selective matches), or "
+                    "`strictPostFilter` (preview) to filter after global aggregation (highest risk of false negatives with selective filters)."
+                ),
+                examples=["preFilter", "postFilter", "strictPostFilter"],
+            ),
+        ] = None,
         vector_default_k: Annotated[
             Optional[int],
             Field(
@@ -251,6 +263,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             filter_expression=filter,
             order_by=order_by_list,
             facets=facet_list,
+            vector_filter_mode=vector_filter_mode,
             search_mode=search_mode,
             search_fields=search_fields_list,
             vector_fields=vector_fields_list,

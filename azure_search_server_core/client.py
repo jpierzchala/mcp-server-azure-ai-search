@@ -115,6 +115,7 @@ class AzureSearchClient:
         filter_expression: Optional[str] = None,
         order_by: Optional[Sequence[str]] = None,
         facets: Optional[Sequence[str]] = None,
+        vector_filter_mode: Optional[str] = None,
         search_mode: Optional[str],
         search_fields: Optional[Sequence[str]],
         vector_fields: Optional[Sequence[str]],
@@ -248,6 +249,9 @@ class AzureSearchClient:
 
         if facets:
             search_kwargs["facets"] = list(facets)
+
+        if vector_filter_mode:
+            search_kwargs["vector_filter_mode"] = vector_filter_mode
 
         print(f"Search payload: {search_kwargs}", file=sys.stderr)
 
