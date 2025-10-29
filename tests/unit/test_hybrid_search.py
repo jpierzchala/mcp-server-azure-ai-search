@@ -3,7 +3,7 @@ import sys
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
-import pytest
+import pytest  # type: ignore[import]
 
 
 pytestmark = pytest.mark.unit
@@ -95,8 +95,12 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert call_kwargs["include_total_count"] is True
     assert call_kwargs["search_mode"] == "all"
     assert call_kwargs["top"] == 15
-    assert call_kwargs["captions"] == "extractive|highlight-true"
-    assert call_kwargs["answers"] == "extractive|count-3"
+    assert call_kwargs["query_caption"] == "extractive"
+    assert call_kwargs["query_caption_highlight_enabled"] is True
+    assert call_kwargs["query_answer"] == "extractive"
+    assert call_kwargs["query_answer_count"] == 3
+    assert "captions" not in call_kwargs
+    assert "answers" not in call_kwargs
     assert call_kwargs["search_fields"] == ["chunk", "FullName"]
     assert call_kwargs["select"] == ["chunk", "FullName"]
 

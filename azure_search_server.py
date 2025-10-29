@@ -6,12 +6,12 @@ import re
 import sys
 from typing import Annotated, Any, Dict, List, Optional, Sequence, Union
 
-from dotenv import load_dotenv
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizableTextQuery
-from mcp.server.fastmcp import FastMCP
-from pydantic import Field
+from dotenv import load_dotenv  # type: ignore[import]
+from azure.core.credentials import AzureKeyCredential  # type: ignore[import]
+from azure.search.documents import SearchClient  # type: ignore[import]
+from azure.search.documents.models import VectorizableTextQuery  # type: ignore[import]
+from mcp.server.fastmcp import FastMCP  # type: ignore[import]
+from pydantic import Field  # type: ignore[import]
 
 # Add startup message
 print("Starting Azure AI Search MCP Server...", file=sys.stderr)
@@ -107,6 +107,68 @@ def _vector_field_selector(values: Sequence[str]) -> str:
         return "text_vector"
 
     return ",".join(cleaned)
+
+
+def _parse_semantic_captions(value: str) -> Dict[str, Any]:
+    """Translate REST-style captions string into SDK keyword arguments."""
+
+    if not value:
+        return {}
+
+    caption_type: Optional[str] = None
+    highlight: Optional[bool] = None
+
+    for part in (segment.strip() for segment in value.split("|") if segment.strip()):
+        lowered = part.lower()
+        if lowered.startswith("highlight-"):
+            option = lowered.split("-", 1)[-1]
+            highlight = option == "true"
+        else:
+            caption_type = part
+
+    payload: Dict[str, Any] = {}
+    if caption_type:
+        payload["query_caption"] = caption_type
+    if highlight is not None:
+        payload["query_caption_highlight_enabled"] = highlight
+
+    return payload
+
+
+def _parse_semantic_answers(value: str) -> Dict[str, Any]:
+    """Translate REST-style answers string into SDK keyword arguments."""
+
+    if not value:
+        return {}
+
+    answer_type: Optional[str] = None
+    answer_count: Optional[int] = None
+    answer_threshold: Optional[float] = None
+
+    for part in (segment.strip() for segment in value.split("|") if segment.strip()):
+        lowered = part.lower()
+        if lowered.startswith("count-"):
+            try:
+                answer_count = int(lowered.split("-", 1)[-1])
+            except ValueError:
+                print(f"Warning: unable to parse answer count from '{part}'", file=sys.stderr)
+        elif lowered.startswith("threshold-"):
+            try:
+                answer_threshold = float(lowered.split("-", 1)[-1])
+            except ValueError:
+                print(f"Warning: unable to parse answer threshold from '{part}'", file=sys.stderr)
+        else:
+            answer_type = part
+
+    payload: Dict[str, Any] = {}
+    if answer_type:
+        payload["query_answer"] = answer_type
+    if answer_count is not None:
+        payload["query_answer_count"] = answer_count
+    if answer_threshold is not None:
+        payload["query_answer_threshold"] = answer_threshold
+
+    return payload
 
 
 def _try_parse_int(value: Optional[Union[str, int]]) -> Optional[int]:
@@ -334,10 +396,10 @@ class AzureSearchClient:
             search_kwargs["query_type"] = effective_query_type
 
         if captions:
-            search_kwargs["captions"] = captions
+            search_kwargs.update(_parse_semantic_captions(captions))
 
         if answers:
-            search_kwargs["answers"] = answers
+            search_kwargs.update(_parse_semantic_answers(answers))
 
         print(f"Hybrid search payload: {search_kwargs}", file=sys.stderr)
 
