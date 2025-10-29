@@ -57,6 +57,8 @@ def mocked_server(monkeypatch):
     module = importlib.import_module(MODULE_NAME)
     patcher.stop()
 
+    monkeypatch.setattr("azure_search_server_core.client.SearchClient", mock_search_cls)
+
     yield module, mock_search_cls, mock_search_instance, fake_results
 
     if MODULE_NAME in sys.modules:
