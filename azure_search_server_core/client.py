@@ -81,7 +81,6 @@ class AzureSearchClient:
         results = self.search_client.search(
             search_text=query,
             top=top,
-            select=["title", "chunk"],
         )
         return self._format_results(results)
 
@@ -98,7 +97,6 @@ class AzureSearchClient:
                 )
             ],
             top=top,
-            select=["title", "chunk"],
         )
         return self._format_results(results)
 

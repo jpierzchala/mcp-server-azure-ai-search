@@ -35,10 +35,8 @@ def test_client_initializes(server_module):
 
 def test_keyword_search_smoke(server_module):
     result = server_module.keyword_search("test", top=1)
-    assert isinstance(result, str)
-    # Expect markdown header from formatter on success
-    # If the service returns no hits, the message should still be a string
-    # and not an initialization error
-    assert "Error: Azure Search client is not initialized" not in result
+    assert isinstance(result, dict)
+    assert result.get("searchType") == "Keyword Search"
+    assert "error" not in result
 
 

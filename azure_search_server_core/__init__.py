@@ -7,7 +7,7 @@ entrypoint lightweight while providing clearer separation of concerns.
 
 from . import runtime
 from .client import AzureSearchClient
-from .formatting import format_results_as_markdown
+from .formatting import format_results
 from .runtime import initialize_runtime, run_server
 from .utils import (
     _coalesce,
@@ -28,7 +28,7 @@ from .tools.hybrid import register_hybrid_tool
 
 __all__ = [
     "AzureSearchClient",
-    "format_results_as_markdown",
+    "format_results",
     "initialize_runtime",
     "run_server",
     "register_keyword_tool",

@@ -12,9 +12,10 @@ def test_tools_return_error_when_client_not_initialized(monkeypatch):
     msg2 = server.vector_search("test", top=1)
     msg3 = server.hybrid_search(search="test", vectors=["test"])
 
-    expected = "Error: Azure Search client is not initialized"
-    assert expected in msg1
-    assert expected in msg2
-    assert expected in msg3
+    expected = "Azure Search client is not initialized"
+    for payload in (msg1, msg2, msg3):
+        assert isinstance(payload, dict)
+        assert payload.get("error") is not None
+        assert expected in payload["error"]
 
 

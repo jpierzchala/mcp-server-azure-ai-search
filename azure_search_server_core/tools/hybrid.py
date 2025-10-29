@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import sys
-from typing import Annotated, Callable, List, Optional, Union
+from typing import Annotated, Any, Callable, Dict, List, Optional, Union
 
 from pydantic import Field  # type: ignore[import]
 
-from ..formatting import format_results_as_markdown
+from ..formatting import format_results
 from ..utils import (
     _ensure_list_of_strings,
     _normalize_vector_descriptors,
@@ -176,14 +176,17 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 description="Include `@search.score` (and reranker score when available) in the response.",
             ),
         ] = False,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Run a hybrid (lexical + vector) query with field-level configuration."""
 
         print("Tool called: hybrid_search with structured parameters", file=sys.stderr)
 
         search_client = get_search_client()
         if search_client is None:
-            return "Error: Azure Search client is not initialized. Check server logs for details."
+            return {
+                "error": "Azure Search client is not initialized. Check server logs for details.",
+                "searchType": "Hybrid Search",
+            }
 
         try:
             vector_descriptors = _normalize_vector_descriptors(vectors)
@@ -216,11 +219,14 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 vector_default_weight=vector_default_weight,
                 include_scores=include_scores,
             )
-            return format_results_as_markdown(payload, "Hybrid Search")
+            return format_results(payload, "Hybrid Search")
         except Exception as exc:  # pragma: no cover - defensive diagnostics
             error_msg = f"Error performing hybrid search: {exc}"
             print(error_msg, file=sys.stderr)
-            return error_msg
+            return {
+                "error": error_msg,
+                "searchType": "Hybrid Search",
+            }
 
     return hybrid_search
 

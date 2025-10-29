@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from azure_search_server_core import (
     AzureSearchClient,
-    format_results_as_markdown,
+    format_results,
     initialize_runtime,
     register_hybrid_tool,
     register_keyword_tool,
@@ -41,7 +41,7 @@ keyword_search = register_keyword_tool(mcp, _get_search_client)
 vector_search = register_vector_tool(mcp, _get_search_client)
 hybrid_search = register_hybrid_tool(mcp, _get_search_client)
 
-_format_results_as_markdown = format_results_as_markdown
+_format_results_as_json = format_results
 
 
 def main() -> None:
@@ -58,8 +58,8 @@ __all__ = [
     "vector_search",
     "hybrid_search",
     "main",
-    "_format_results_as_markdown",
-    "format_results_as_markdown",
+    "_format_results_as_json",
+    "format_results",
     "_coalesce",
     "_ensure_list_of_strings",
     "_ensure_list_of_ints",
