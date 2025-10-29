@@ -8,12 +8,12 @@ def test_tools_return_error_when_client_not_initialized(monkeypatch):
     # Ensure the global client is None so tool functions return an error message
     monkeypatch.setattr(server, "search_client", None, raising=False)
 
-    msg1 = server.keyword_search("test", top=1)
-    msg2 = server.vector_search("test", top=1)
-    msg3 = server.hybrid_search(search="test", vectors=["test"])
+    msg_lexical = server.search(search="test", vectors=None, top=1)
+    msg_vector = server.search(search=None, vectors=["test"], top=1)
+    msg_hybrid = server.search(search="test", vectors=["test"], top=1)
 
     expected = "Azure Search client is not initialized"
-    for payload in (msg1, msg2, msg3):
+    for payload in (msg_lexical, msg_vector, msg_hybrid):
         assert isinstance(payload, dict)
         assert payload.get("error") is not None
         assert expected in payload["error"]

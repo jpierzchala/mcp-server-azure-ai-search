@@ -81,6 +81,9 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
         semantic_configuration=None,
         captions="extractive|highlight-true",
         answers="extractive|count-3",
+        filter_expression="DomainUserLogin eq 'jpierzchala'",
+        order_by=["@search.score desc"],
+        facets=["DomainUserLogin,count:10"],
         search_mode="all",
         search_fields=[],
         vector_fields=[],
@@ -106,6 +109,9 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert "answers" not in call_kwargs
     assert call_kwargs["search_fields"] == ["chunk", "FullName"]
     assert call_kwargs["select"] == ["chunk", "FullName"]
+    assert call_kwargs["filter"] == "DomainUserLogin eq 'jpierzchala'"
+    assert call_kwargs["order_by"] == ["@search.score desc"]
+    assert call_kwargs["facets"] == ["DomainUserLogin,count:10"]
 
     vector_queries = call_kwargs["vector_queries"]
     assert len(vector_queries) == 2

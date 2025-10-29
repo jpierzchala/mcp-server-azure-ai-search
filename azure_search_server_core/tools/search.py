@@ -1,4 +1,4 @@
-"""Hybrid search MCP tool."""
+"""Unified search MCP tool."""
 
 from __future__ import annotations
 
@@ -14,29 +14,34 @@ from ..utils import (
 )
 
 
-def register_hybrid_tool(mcp, get_search_client) -> Callable:
-    """Register the hybrid search tool on the provided MCP instance."""
+def register_search_tool(mcp, get_search_client) -> Callable:
+    """Register the unified search tool on the provided MCP instance."""
 
     @mcp.tool()
-    def hybrid_search(
+    def search(
         search: Annotated[
-            str,
+            Optional[str],
             Field(
+                default=None,
                 description=(
                     "Lexical search expression. Supports the Azure Search simple syntax including phrase "
-                    "matching, logical operators, required (+), negation, and exact phrases."
+                    "matching, logical operators, required (+), negation, and exact phrases. Leave empty when "
+                    "performing vector-only search."
                 ),
                 examples=[
-                    '("c++" OR " c ") (embedded OR firmware) -javascript',
+                    '"firmware developer" AND ("c++" OR "embedded")',
                 ],
             ),
         ],
         vectors: Annotated[
-            Union[
-                str,
-                List[Union[str, List[Union[str, int, float]]]],
+            Optional[
+                Union[
+                    str,
+                    List[Union[str, List[Union[str, int, float]]]],
+                ]
             ],
             Field(
+                default=None,
                 description=(
                     "Vector descriptors. Provide each vector as either a plain string (text only) or a list "
                     "containing `[text, optional k, optional weight]`. Strings can also be supplied one per line."
@@ -49,7 +54,7 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                     ]
                 ],
             ),
-        ],
+        ] = None,
         select: Annotated[
             Optional[Union[str, List[str]]],
             Field(
@@ -97,6 +102,33 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 default=None,
                 description=(
                     "Answers behavior, for example `extractive|count-10`. Leave empty to disable answer generation."
+                ),
+            ),
+        ] = None,
+        filter: Annotated[
+            Optional[str],
+            Field(
+                default=None,
+                description=(
+                    "Optional OData filter expression, e.g. `DomainUserLogin eq 'aaszteborski' or parent_id eq '...'`."
+                ),
+            ),
+        ] = None,
+        order_by: Annotated[
+            Optional[Union[str, List[str]]],
+            Field(
+                default=None,
+                description=(
+                    "Optional order-by clause(s). Provide a comma-separated string or list, e.g. `@search.score desc`."
+                ),
+            ),
+        ] = None,
+        facets: Annotated[
+            Optional[Union[str, List[str]]],
+            Field(
+                default=None,
+                description=(
+                    "Optional facets to request. Provide comma-separated names or a list of facet expressions."
                 ),
             ),
         ] = None,
@@ -177,59 +209,69 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
             ),
         ] = False,
     ) -> Dict[str, Any]:
-        """Run a hybrid (lexical + vector) query with field-level configuration."""
+        """Run a search (lexical, vector, or hybrid) based on provided parameters."""
 
-        print("Tool called: hybrid_search with structured parameters", file=sys.stderr)
+        print("Tool called: search with structured parameters", file=sys.stderr)
 
         search_client = get_search_client()
         if search_client is None:
             return {
                 "error": "Azure Search client is not initialized. Check server logs for details.",
-                "searchType": "Hybrid Search",
+                "searchType": "Search",
             }
 
+        vector_descriptors = _normalize_vector_descriptors(vectors)
+        lexical_query = (search or "").strip()
+
+        if not lexical_query and not vector_descriptors:
+            return {
+                "error": "Provide either a lexical `search` query, at least one vector descriptor, or both.",
+                "searchType": "Search",
+            }
+
+        vector_text_list = [item[0] for item in vector_descriptors]
+        vector_k_list = [item[1] for item in vector_descriptors]
+        vector_weight_list = [item[2] for item in vector_descriptors]
+        search_fields_list = _ensure_list_of_strings(search_fields)
+        select_fields_list = _ensure_list_of_strings(select)
+        vector_fields_list = _ensure_list_of_strings(vector_fields)
+        order_by_list = _ensure_list_of_strings(order_by)
+        facet_list = _ensure_list_of_strings(facets)
+
+        payload = search_client.hybrid_search(
+            search_text=lexical_query,
+            vector_texts=vector_text_list,
+            top=top,
+            count=count,
+            select_fields=select_fields_list,
+            query_type=query_type,
+            semantic_configuration=semantic_configuration,
+            captions=captions,
+            answers=answers,
+            filter_expression=filter,
+            order_by=order_by_list,
+            facets=facet_list,
+            search_mode=search_mode,
+            search_fields=search_fields_list,
+            vector_fields=vector_fields_list,
+            vector_ks=vector_k_list,
+            vector_weights=vector_weight_list,
+            vector_default_k=vector_default_k,
+            vector_default_weight=vector_default_weight,
+            include_scores=include_scores,
+        )
+
         try:
-            vector_descriptors = _normalize_vector_descriptors(vectors)
-            if not vector_descriptors:
-                raise ValueError("Provide at least one vector entry in `vectors`.")
-
-            vector_text_list = [item[0] for item in vector_descriptors]
-            vector_k_list = [item[1] for item in vector_descriptors]
-            vector_weight_list = [item[2] for item in vector_descriptors]
-            search_fields_list = _ensure_list_of_strings(search_fields)
-            select_fields_list = _ensure_list_of_strings(select)
-            vector_fields_list = _ensure_list_of_strings(vector_fields)
-
-            payload = search_client.hybrid_search(
-                search_text=search,
-                vector_texts=vector_text_list,
-                top=top,
-                count=count,
-                select_fields=select_fields_list,
-                query_type=query_type,
-                semantic_configuration=semantic_configuration,
-                captions=captions,
-                answers=answers,
-                search_mode=search_mode,
-                search_fields=search_fields_list,
-                vector_fields=vector_fields_list,
-                vector_ks=vector_k_list,
-                vector_weights=vector_weight_list,
-                vector_default_k=vector_default_k,
-                vector_default_weight=vector_default_weight,
-                include_scores=include_scores,
-            )
-            return format_results(payload, "Hybrid Search")
+            return format_results(payload, "Search")
         except Exception as exc:  # pragma: no cover - defensive diagnostics
-            error_msg = f"Error performing hybrid search: {exc}"
+            error_msg = f"Error performing search: {exc}"
             print(error_msg, file=sys.stderr)
             return {
                 "error": error_msg,
-                "searchType": "Hybrid Search",
+                "searchType": "Search",
             }
 
-    return hybrid_search
+    return search
 
 
-__all__ = ["register_hybrid_tool"]
-
+__all__ = ["register_search_tool"]

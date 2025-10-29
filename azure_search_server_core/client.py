@@ -103,7 +103,7 @@ class AzureSearchClient:
     def hybrid_search(
         self,
         *,
-        search_text: str,
+        search_text: Optional[str],
         vector_texts: Sequence[str],
         top: int,
         count: bool,
@@ -112,6 +112,9 @@ class AzureSearchClient:
         semantic_configuration: Optional[str],
         captions: Optional[str],
         answers: Optional[str],
+        filter_expression: Optional[str] = None,
+        order_by: Optional[Sequence[str]] = None,
+        facets: Optional[Sequence[str]] = None,
         search_mode: Optional[str],
         search_fields: Optional[Sequence[str]],
         vector_fields: Optional[Sequence[str]],
@@ -121,13 +124,18 @@ class AzureSearchClient:
         vector_default_weight: Optional[float],
         include_scores: bool,
     ) -> Dict[str, Any]:
-        """Perform hybrid search with granular configuration support."""
+        """Perform search with granular configuration support."""
 
-        print("Performing configurable hybrid search", file=sys.stderr)
+        print("Performing configurable search", file=sys.stderr)
 
-        effective_search_text = search_text.strip()
-        if not effective_search_text:
-            raise ValueError("The `search` parameter cannot be empty.")
+        lexical_query = (search_text or "").strip()
+        has_lexical = bool(lexical_query)
+
+        normalized_vector_texts = [text.strip() for text in vector_texts if text and text.strip()]
+        has_vectors = bool(normalized_vector_texts)
+
+        if not has_lexical and not has_vectors:
+            raise ValueError("Provide either a non-empty `search` query, at least one vector descriptor, or both.")
 
         effective_semantic_configuration = _coalesce(
             semantic_configuration,
@@ -140,14 +148,14 @@ class AzureSearchClient:
             )
 
         effective_search_fields = list(search_fields) if search_fields else list(self.default_search_fields)
-        if not effective_search_fields:
+        if has_lexical and not effective_search_fields:
             raise ValueError(
-                "Search fields are required. Provide them via the `search_fields` parameter or set "
-                "`AZURE_SEARCH_SEARCH_FIELDS`."
+                "Search fields are required for lexical queries. Provide them via the `search_fields` parameter "
+                "or set `AZURE_SEARCH_SEARCH_FIELDS`."
             )
 
         effective_vector_fields = list(vector_fields) if vector_fields else list(self.default_vector_fields)
-        if not effective_vector_fields:
+        if has_vectors and not effective_vector_fields:
             effective_vector_fields = ["text_vector"]
 
         effective_select_fields = list(select_fields) if select_fields else list(self.default_select_fields)
@@ -155,62 +163,64 @@ class AzureSearchClient:
         effective_query_type = query_type or self.default_query_type
 
         effective_search_mode = (search_mode or self.default_search_mode or "all").lower()
-        if effective_search_mode not in {"any", "all"}:
+        if has_lexical and effective_search_mode not in {"any", "all"}:
             raise ValueError("`search_mode` must be either 'any' or 'all'.")
 
         effective_vector_default_k = _coalesce(vector_default_k, self.default_vector_k, 60)
         effective_vector_default_weight = _coalesce(vector_default_weight, self.default_vector_weight, 1.0)
 
-        normalized_vector_texts = [text.strip() for text in vector_texts if text and text.strip()]
-        if not normalized_vector_texts:
-            raise ValueError("Provide at least one non-empty vector description in `vector_texts`.")
-
         resolved_vector_ks: List[Optional[int]] = []
-        vector_ks_list = list(vector_ks)
-        for idx, _ in enumerate(normalized_vector_texts):
-            candidate: Optional[int] = None
-            if vector_ks_list:
-                if idx < len(vector_ks_list):
-                    candidate = vector_ks_list[idx]
-                else:
-                    candidate = vector_ks_list[-1]
-            resolved_vector_ks.append(candidate or effective_vector_default_k)
-
         resolved_vector_weights: List[Optional[float]] = []
-        vector_weights_list = list(vector_weights)
-        for idx, _ in enumerate(normalized_vector_texts):
-            candidate_weight: Optional[float] = None
-            if vector_weights_list:
-                if idx < len(vector_weights_list):
-                    candidate_weight = vector_weights_list[idx]
-                else:
-                    candidate_weight = vector_weights_list[-1]
-            resolved_vector_weights.append(candidate_weight or effective_vector_default_weight)
+        if has_vectors:
+            vector_ks_list = list(vector_ks)
+            vector_weights_list = list(vector_weights)
+            for idx, _ in enumerate(normalized_vector_texts):
+                candidate_k: Optional[int] = None
+                if vector_ks_list:
+                    if idx < len(vector_ks_list):
+                        candidate_k = vector_ks_list[idx]
+                    else:
+                        candidate_k = vector_ks_list[-1]
+                resolved_vector_ks.append(candidate_k or effective_vector_default_k)
+
+                candidate_weight: Optional[float] = None
+                if vector_weights_list:
+                    if idx < len(vector_weights_list):
+                        candidate_weight = vector_weights_list[idx]
+                    else:
+                        candidate_weight = vector_weights_list[-1]
+                resolved_vector_weights.append(candidate_weight or effective_vector_default_weight)
 
         vector_queries = []
-        vector_field_value = _vector_field_selector(effective_vector_fields)
-        for idx, text in enumerate(normalized_vector_texts):
-            vector_queries.append(
-                VectorizableTextQuery(
-                    text=text,
-                    fields=vector_field_value,
-                    k_nearest_neighbors=resolved_vector_ks[idx],
-                    weight=resolved_vector_weights[idx],
+        vector_field_value: Optional[str] = None
+        if has_vectors:
+            vector_field_value = _vector_field_selector(effective_vector_fields)
+            for idx, text in enumerate(normalized_vector_texts):
+                vector_queries.append(
+                    VectorizableTextQuery(
+                        text=text,
+                        fields=vector_field_value,
+                        k_nearest_neighbors=resolved_vector_ks[idx],
+                        weight=resolved_vector_weights[idx],
+                    )
                 )
-            )
 
         search_kwargs: Dict[str, Any] = {
-            "search_text": effective_search_text,
-            "vector_queries": vector_queries,
             "top": top,
-            "search_mode": effective_search_mode,
             "semantic_configuration_name": effective_semantic_configuration,
         }
+
+        if has_lexical:
+            search_kwargs["search_text"] = lexical_query
+            search_kwargs["search_mode"] = effective_search_mode
+
+        if has_vectors:
+            search_kwargs["vector_queries"] = vector_queries
 
         if count:
             search_kwargs["include_total_count"] = True
 
-        search_fields_value = _list_to_field_value(effective_search_fields)
+        search_fields_value = _list_to_field_value(effective_search_fields) if has_lexical else None
         if search_fields_value:
             search_kwargs["search_fields"] = search_fields_value
 
@@ -230,7 +240,16 @@ class AzureSearchClient:
         if answers:
             search_kwargs.update(_parse_semantic_answers(answers))
 
-        print(f"Hybrid search payload: {search_kwargs}", file=sys.stderr)
+        if filter_expression:
+            search_kwargs["filter"] = filter_expression
+
+        if order_by:
+            search_kwargs["order_by"] = list(order_by)
+
+        if facets:
+            search_kwargs["facets"] = list(facets)
+
+        print(f"Search payload: {search_kwargs}", file=sys.stderr)
 
         results_page = self.search_client.search(**search_kwargs)
 
@@ -242,24 +261,35 @@ class AzureSearchClient:
             caption_preferences=caption_preferences,
         )
 
+        applied_payload: Dict[str, Any] = {
+            "top": top,
+            "semantic_configuration": effective_semantic_configuration,
+            "count": count,
+            "captions": captions,
+            "answers": answers,
+            "include_scores": include_scores,
+        }
+        if has_lexical:
+            applied_payload["search_mode"] = effective_search_mode
+            applied_payload["search_fields"] = search_fields_value
+            applied_payload["query_type"] = effective_query_type
+        if select_value:
+            applied_payload["select"] = select_value
+        if has_vectors:
+            applied_payload.update(
+                {
+                    "vector_fields": vector_field_value,
+                    "vector_default_k": effective_vector_default_k,
+                    "vector_default_weight": effective_vector_default_weight,
+                    "vector_ks": resolved_vector_ks,
+                    "vector_weights": resolved_vector_weights,
+                }
+            )
+
         return {
             "items": formatted_results,
             "count": total_count,
-            "applied": {
-                "top": top,
-                "search_mode": effective_search_mode,
-                "query_type": effective_query_type,
-                "semantic_configuration": effective_semantic_configuration,
-                "search_fields": search_fields_value,
-                "select": select_value,
-                "vector_fields": vector_field_value,
-                "vector_default_k": effective_vector_default_k,
-                "vector_default_weight": effective_vector_default_weight,
-                "count": count,
-                "captions": captions,
-                "answers": answers,
-                "include_scores": include_scores,
-            },
+            "applied": applied_payload,
         }
 
     def _format_results(

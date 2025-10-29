@@ -34,9 +34,9 @@ def test_client_initializes(server_module):
 
 
 def test_keyword_search_smoke(server_module):
-    result = server_module.keyword_search("test", top=1)
+    result = server_module.search(search="test", vectors=None, top=1)
     assert isinstance(result, dict)
-    assert result.get("searchType") == "Keyword Search"
+    assert result.get("searchType") == "Search"
     assert "error" not in result
 
 

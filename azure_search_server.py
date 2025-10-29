@@ -12,9 +12,7 @@ from azure_search_server_core import (
     AzureSearchClient,
     format_results,
     initialize_runtime,
-    register_hybrid_tool,
-    register_keyword_tool,
-    register_vector_tool,
+    register_search_tool,
     run_server,
     _coalesce,
     _ensure_list_of_floats,
@@ -37,9 +35,7 @@ def _get_search_client():
     return globals().get("search_client")
 
 
-keyword_search = register_keyword_tool(mcp, _get_search_client)
-vector_search = register_vector_tool(mcp, _get_search_client)
-hybrid_search = register_hybrid_tool(mcp, _get_search_client)
+search = register_search_tool(mcp, _get_search_client)
 
 _format_results_as_json = format_results
 
@@ -54,9 +50,7 @@ __all__ = [
     "AzureSearchClient",
     "mcp",
     "search_client",
-    "keyword_search",
-    "vector_search",
-    "hybrid_search",
+    "search",
     "main",
     "_format_results_as_json",
     "format_results",

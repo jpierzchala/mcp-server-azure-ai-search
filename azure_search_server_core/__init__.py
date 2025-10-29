@@ -22,18 +22,14 @@ from .utils import (
     _try_parse_int,
     _vector_field_selector,
 )
-from .tools.keyword import register_keyword_tool
-from .tools.vector import register_vector_tool
-from .tools.hybrid import register_hybrid_tool
+from .tools.search import register_search_tool
 
 __all__ = [
     "AzureSearchClient",
     "format_results",
     "initialize_runtime",
     "run_server",
-    "register_keyword_tool",
-    "register_vector_tool",
-    "register_hybrid_tool",
+    "register_search_tool",
     "_coalesce",
     "_ensure_list_of_floats",
     "_ensure_list_of_ints",
