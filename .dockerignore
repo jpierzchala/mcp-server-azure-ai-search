@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Envs
+.venv/
+.env
+.env.*
+
+# VCS
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tools & builds
+*.log
+*.sqlite*
+*.db
+site/
+dist/
+build/
+.eggs/
+*.egg-info/
+
+# Misc
+images/
+

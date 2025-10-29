@@ -19,7 +19,7 @@ print("Environment variables loaded", file=sys.stderr)
 mcp = FastMCP(
     "azure-search", 
     description="MCP server for Azure AI Search integration",
-    dependencies=["azure-search-documents==11.5.2", "azure-identity", "python-dotenv"]
+    dependencies=["azure-search-documents==11.6.0b10", "azure-identity", "python-dotenv"]
 )
 print("MCP server instance created", file=sys.stderr)
 
@@ -212,6 +212,20 @@ def hybrid_search(query: str, top: int = 5) -> str:
         return error_msg
 
 if __name__ == "__main__":
-    # Run the server with stdio transport (default)
+    # Run the server with SSE (HTTP) or stdio based on environment
     print("Starting MCP server run...", file=sys.stderr)
-    mcp.run()
+    transport = os.getenv("MCP_TRANSPORT", "sse")
+    if transport == "sse":
+        host = os.getenv("MCP_HOST", "0.0.0.0")
+        port = int(os.getenv("MCP_PORT", "8080"))
+        # Configure FastMCP SSE host/port via settings (used by internal uvicorn server)
+        try:
+            mcp.settings.host = host
+            mcp.settings.port = port
+        except Exception as e:
+            print(f"Warning: failed to set host/port on settings: {e}", file=sys.stderr)
+        print(f"Running MCP server over SSE on {host}:{port}", file=sys.stderr)
+        mcp.run(transport="sse")
+    else:
+        print("Running MCP server over stdio", file=sys.stderr)
+        mcp.run()
