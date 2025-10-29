@@ -75,6 +75,7 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
         search_text="firmware engineer",
         vector_texts=["embedded engineer", "firmware developer"],
         top=15,
+        skip=5,
         count=True,
         select_fields=["chunk", "FullName"],
         query_type="semantic",
@@ -114,6 +115,7 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert call_kwargs["order_by"] == ["@search.score desc"]
     assert call_kwargs["facets"] == ["DomainUserLogin,count:10"]
     assert call_kwargs["vector_filter_mode"] == "preFilter"
+    assert call_kwargs["skip"] == 5
 
     vector_queries = call_kwargs["vector_queries"]
     assert len(vector_queries) == 2
@@ -141,6 +143,7 @@ def test_hybrid_search_requires_semantic_configuration(mocked_server, monkeypatc
             search_text="embedded developer",
             vector_texts=["firmware"],
             top=5,
+            skip=None,
             count=False,
             select_fields=["chunk"],
             query_type="semantic",

@@ -106,6 +106,7 @@ class AzureSearchClient:
         search_text: Optional[str],
         vector_texts: Sequence[str],
         top: int,
+        skip: Optional[int],
         count: bool,
         select_fields: Optional[Sequence[str]],
         query_type: Optional[str],
@@ -221,6 +222,9 @@ class AzureSearchClient:
         if count:
             search_kwargs["include_total_count"] = True
 
+        if skip:
+            search_kwargs["skip"] = skip
+
         search_fields_value = _list_to_field_value(effective_search_fields) if has_lexical else None
         if search_fields_value:
             search_kwargs["search_fields"] = search_fields_value
@@ -289,10 +293,22 @@ class AzureSearchClient:
                     "vector_weights": resolved_vector_weights,
                 }
             )
+        if facets:
+            applied_payload["facets"] = list(facets)
+        if vector_filter_mode:
+            applied_payload["vector_filter_mode"] = vector_filter_mode
+        if skip:
+            applied_payload["skip"] = skip
+
+        try:
+            facets_result = results_page.get_facets()  # type: ignore[attr-defined]
+        except AttributeError:
+            facets_result = None
 
         return {
             "items": formatted_results,
             "count": total_count,
+            "facets": facets_result,
             "applied": applied_payload,
         }
 

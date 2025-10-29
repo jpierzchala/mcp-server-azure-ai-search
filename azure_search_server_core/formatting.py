@@ -11,14 +11,17 @@ def format_results(results_payload: Any, search_type: str) -> Dict[str, Any]:
     if isinstance(results_payload, dict):
         items = results_payload.get("items", [])
         total_count = results_payload.get("count")
+        facets = results_payload.get("facets")
     else:
         items = results_payload
         total_count = None
+        facets = None
 
     return {
         "searchType": search_type,
         "count": total_count,
         "items": items,
+        "facets": facets,
     }
 
 

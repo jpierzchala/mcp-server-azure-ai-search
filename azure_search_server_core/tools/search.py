@@ -132,6 +132,26 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 ),
             ),
         ] = None,
+        vector_filter_mode: Annotated[
+            Optional[str],
+            Field(
+                default=None,
+                description=(
+                    "Optional vector filter mode. Use `preFilter` to apply filters during HNSW traversal (higher recall, higher latency), "
+                    "`postFilter` to filter per shard after traversal (faster but can miss highly selective matches), or "
+                    "`strictPostFilter` (preview) to filter after global aggregation (highest risk of false negatives with selective filters)."
+                ),
+                examples=["preFilter", "postFilter", "strictPostFilter"],
+            ),
+        ] = None,
+        skip: Annotated[
+            Optional[int],
+            Field(
+                default=None,
+                ge=0,
+                description="Number of results to skip from the start of the result set (server-side pagination).",
+            ),
+        ] = None,
         search_mode: Annotated[
             Optional[str],
             Field(
@@ -161,18 +181,6 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                     "Vector field names to evaluate for semantic similarity. Provide comma-separated names or a list. "
                     "Defaults to `AZURE_SEARCH_VECTOR_FIELDS` or `text_vector`."
                 ),
-            ),
-        ] = None,
-        vector_filter_mode: Annotated[
-            Optional[str],
-            Field(
-                default=None,
-                description=(
-                    "Optional vector filter mode. Use `preFilter` to apply filters during HNSW traversal (higher recall, higher latency), "
-                    "`postFilter` to filter per shard after traversal (faster but can miss highly selective matches), or "
-                    "`strictPostFilter` (preview) to filter after global aggregation (highest risk of false negatives with selective filters)."
-                ),
-                examples=["preFilter", "postFilter", "strictPostFilter"],
             ),
         ] = None,
         vector_default_k: Annotated[
@@ -254,6 +262,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             search_text=lexical_query,
             vector_texts=vector_text_list,
             top=top,
+            skip=skip,
             count=count,
             select_fields=select_fields_list,
             query_type=query_type,
