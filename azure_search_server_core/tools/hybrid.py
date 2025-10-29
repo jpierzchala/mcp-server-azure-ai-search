@@ -9,9 +9,8 @@ from pydantic import Field  # type: ignore[import]
 
 from ..formatting import format_results_as_markdown
 from ..utils import (
-    _ensure_list_of_floats,
-    _ensure_list_of_ints,
     _ensure_list_of_strings,
+    _normalize_vector_descriptors,
 )
 
 
@@ -32,17 +31,20 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 ],
             ),
         ],
-        vector_texts: Annotated[
-            Union[str, List[str]],
+        vectors: Annotated[
+            Union[
+                str,
+                List[Union[str, List[Union[str, int, float]]]],
+            ],
             Field(
                 description=(
-                    "One or more semantic descriptions for vector search. Provide as a list or newline-/comma-"
-                    "separated string. The server creates a vector query for each description."
+                    "Vector descriptors. Provide each vector as either a plain string (text only) or a list "
+                    "containing `[text, optional k, optional weight]`. Strings can also be supplied one per line."
                 ),
                 examples=[
                     [
-                        "C or C++ software engineer...",
-                        "Embedded systems and hardware...",
+                        ["C or C++ software engineer...", 60, 2.0],
+                        ["Embedded systems and hardware...", None, 1.3],
                         "Programista C/C++ ...",
                     ]
                 ],
@@ -129,26 +131,6 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 ),
             ),
         ] = None,
-        vector_ks: Annotated[
-            Optional[Union[str, List[int]]],
-            Field(
-                default=None,
-                description=(
-                    "Optional per-vector `k` (nearest neighbors) values. Provide a single value to reuse for all "
-                    "vectors or a list matching the number of vector texts."
-                ),
-            ),
-        ] = None,
-        vector_weights: Annotated[
-            Optional[Union[str, List[float]]],
-            Field(
-                default=None,
-                description=(
-                    "Optional per-vector weights (>0) used when blending semantic and lexical scores. Provide a single "
-                    "value or a list matching the number of vector texts."
-                ),
-            ),
-        ] = None,
         vector_default_k: Annotated[
             Optional[int],
             Field(
@@ -187,6 +169,13 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 description="Whether to request the total number of matches (`includeTotalCount`). Adds latency.",
             ),
         ] = False,
+        include_scores: Annotated[
+            bool,
+            Field(
+                default=False,
+                description="Include `@search.score` (and reranker score when available) in the response.",
+            ),
+        ] = False,
     ) -> str:
         """Run a hybrid (lexical + vector) query with field-level configuration."""
 
@@ -197,12 +186,16 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
             return "Error: Azure Search client is not initialized. Check server logs for details."
 
         try:
-            vector_text_list = _ensure_list_of_strings(vector_texts)
+            vector_descriptors = _normalize_vector_descriptors(vectors)
+            if not vector_descriptors:
+                raise ValueError("Provide at least one vector entry in `vectors`.")
+
+            vector_text_list = [item[0] for item in vector_descriptors]
+            vector_k_list = [item[1] for item in vector_descriptors]
+            vector_weight_list = [item[2] for item in vector_descriptors]
             search_fields_list = _ensure_list_of_strings(search_fields)
             select_fields_list = _ensure_list_of_strings(select)
             vector_fields_list = _ensure_list_of_strings(vector_fields)
-            vector_k_list = _ensure_list_of_ints(vector_ks)
-            vector_weight_list = _ensure_list_of_floats(vector_weights)
 
             payload = search_client.hybrid_search(
                 search_text=search,
@@ -221,6 +214,7 @@ def register_hybrid_tool(mcp, get_search_client) -> Callable:
                 vector_weights=vector_weight_list,
                 vector_default_k=vector_default_k,
                 vector_default_weight=vector_default_weight,
+                include_scores=include_scores,
             )
             return format_results_as_markdown(payload, "Hybrid Search")
         except Exception as exc:  # pragma: no cover - defensive diagnostics

@@ -88,11 +88,108 @@ def _vector_field_selector(values: Sequence[str]) -> str:
     return ",".join(cleaned)
 
 
-def _parse_semantic_captions(value: str) -> dict[str, Any]:
-    """Translate REST-style captions string into SDK keyword arguments."""
+def _normalize_vector_descriptors(
+    value: Optional[Union[str, Sequence[Any]]]
+) -> List[tuple[str, Optional[int], Optional[float]]]:
+    """Normalize vector inputs into (text, k, weight) tuples."""
+
+    descriptors: List[tuple[str, Optional[int], Optional[float]]] = []
+
+    def _record(text: str, k: Optional[int] = None, weight: Optional[float] = None) -> None:
+        stripped = text.strip()
+        if stripped:
+            descriptors.append((stripped, k, weight))
+
+    def _parse_entry(entry: Any) -> None:
+        if entry is None:
+            return
+
+        if isinstance(entry, str):
+            stripped = entry.strip()
+            if not stripped:
+                return
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, (list, tuple)):
+                    _parse_entry(parsed)
+                    return
+            _record(stripped)
+            return
+
+        if isinstance(entry, (list, tuple)):
+            if not entry:
+                return
+
+            text = str(entry[0]).strip()
+            if not text:
+                return
+
+            k_value: Optional[int] = None
+            weight_value: Optional[float] = None
+
+            if len(entry) > 1 and entry[1] not in (None, ""):
+                try:
+                    k_value = int(str(entry[1]).strip())
+                except (TypeError, ValueError):
+                    print(
+                        f"Warning: unable to parse vector k from '{entry[1]}'",
+                        file=sys.stderr,
+                    )
+
+            if len(entry) > 2 and entry[2] not in (None, ""):
+                try:
+                    weight_value = float(str(entry[2]).strip())
+                except (TypeError, ValueError):
+                    print(
+                        f"Warning: unable to parse vector weight from '{entry[2]}'",
+                        file=sys.stderr,
+                    )
+
+            _record(text, k_value, weight_value)
+            return
+
+        _record(str(entry))
+
+    if value is None:
+        return descriptors
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return descriptors
+
+        if stripped.startswith("[") and stripped.endswith("]"):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, (list, tuple)):
+                for item in parsed:
+                    _parse_entry(item)
+                return descriptors
+
+        for line in (line.strip() for line in value.splitlines()):
+            if line:
+                _parse_entry(line)
+        return descriptors
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _parse_entry(item)
+        return descriptors
+
+    _parse_entry(value)
+    return descriptors
+
+
+def _parse_semantic_captions(value: str) -> tuple[dict[str, Any], bool]:
+    """Translate REST-style captions string into SDK keyword arguments and return highlight flag."""
 
     if not value:
-        return {}
+        return {}, False
 
     caption_type: Optional[str] = None
     highlight: Optional[bool] = None
@@ -111,7 +208,7 @@ def _parse_semantic_captions(value: str) -> dict[str, Any]:
     if highlight is not None:
         payload["query_caption_highlight_enabled"] = highlight
 
-    return payload
+    return payload, bool(highlight)
 
 
 def _parse_semantic_answers(value: str) -> dict[str, Any]:

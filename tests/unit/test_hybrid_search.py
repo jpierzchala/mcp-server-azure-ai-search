@@ -88,6 +88,7 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
         vector_weights=[2.0, 1.5],
         vector_default_k=None,
         vector_default_weight=None,
+        include_scores=False,
     )
 
     call_kwargs = mock_instance.search.call_args.kwargs
@@ -145,6 +146,7 @@ def test_hybrid_search_requires_semantic_configuration(mocked_server, monkeypatc
             vector_weights=[],
             vector_default_k=None,
             vector_default_weight=None,
+            include_scores=False,
         )
 
     assert "Semantic configuration" in str(exc.value)

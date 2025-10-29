@@ -59,6 +59,7 @@ def test_hybrid_search_smoke(hybrid_server_module):
         vector_weights=[],
         vector_default_k=None,
         vector_default_weight=None,
+        include_scores=False,
     )
 
     assert isinstance(payload, dict)

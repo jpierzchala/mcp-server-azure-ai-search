@@ -26,10 +26,10 @@ def format_results_as_markdown(results_payload: Any, search_type: str) -> str:
         markdown_lines.append(f"Total matches reported by Azure Search: {total_count}\n")
 
     for i, result in enumerate(items, 1):
-        markdown_lines.append(f"### {i}. {result['title']}")
-        markdown_lines.append(f"Score: {result['score']:.2f}\n")
-        markdown_lines.append(f"{result['content']}\n")
-        markdown_lines.append("---\n")
+        markdown_lines.append(f"### {i}")
+        for key, value in result.items():
+            markdown_lines.append(f"- {key}: {value}")
+        markdown_lines.append("\n---\n")
 
     if applied:
         markdown_lines.append("### Applied search parameters\n")

@@ -21,7 +21,7 @@ def test_format_results_with_items():
 
     markdown = _format_results_as_markdown(results, "Keyword Search")
     assert markdown.startswith("## Keyword Search Results")
-    assert "1. Doc 1" in markdown
-    assert "2. Doc 2" in markdown
+    assert "- title: Doc 1" in markdown
+    assert "- title: Doc 2" in markdown
 
 

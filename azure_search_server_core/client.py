@@ -121,6 +121,7 @@ class AzureSearchClient:
         vector_weights: Sequence[Optional[float]],
         vector_default_k: Optional[int],
         vector_default_weight: Optional[float],
+        include_scores: bool,
     ) -> Dict[str, Any]:
         """Perform hybrid search with granular configuration support."""
 
@@ -222,8 +223,11 @@ class AzureSearchClient:
         if effective_query_type:
             search_kwargs["query_type"] = effective_query_type
 
+        caption_preferences = {"requested": False, "highlight": False}
         if captions:
-            search_kwargs.update(_parse_semantic_captions(captions))
+            caption_kwargs, highlight_requested = _parse_semantic_captions(captions)
+            search_kwargs.update(caption_kwargs)
+            caption_preferences = {"requested": True, "highlight": highlight_requested}
 
         if answers:
             search_kwargs.update(_parse_semantic_answers(answers))
@@ -233,7 +237,12 @@ class AzureSearchClient:
         results_page = self.search_client.search(**search_kwargs)
 
         total_count = results_page.get_count() if count else None
-        formatted_results = self._format_results(results_page)
+        formatted_results = self._format_results(
+            results_page,
+            select_fields=effective_select_fields,
+            include_scores=include_scores,
+            caption_preferences=caption_preferences,
+        )
 
         return {
             "items": formatted_results,
@@ -251,22 +260,89 @@ class AzureSearchClient:
                 "count": count,
                 "captions": captions,
                 "answers": answers,
-                "vector_ks": resolved_vector_ks,
-                "vector_weights": resolved_vector_weights,
+                "include_scores": include_scores,
             },
         }
 
-    def _format_results(self, results):
-        """Format search results for better readability."""
+    def _format_results(
+        self,
+        results,
+        *,
+        select_fields: Optional[Sequence[str]] = None,
+        include_scores: bool = True,
+        caption_preferences: Optional[dict[str, bool]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Format search results honoring selected fields and caption preferences."""
 
-        formatted_results = []
+        formatted_results: List[Dict[str, Any]] = []
+
+        select_list = list(select_fields or [])
+        caption_requested = bool(caption_preferences and caption_preferences.get("requested"))
+        highlight_requested = bool(caption_preferences and caption_preferences.get("highlight"))
+
+        default_field_order = ["title", "Title", "name", "Name", "FullName", "fullName"]
+
         for result in results:
-            item = {
-                "title": result.get("title", "Unknown"),
-                "content": result.get("chunk", "")[:1000],
-                "score": result.get("@search.score", 0),
-            }
-            formatted_results.append(item)
+            entry: Dict[str, Any] = {}
+
+            if select_list:
+                for field in select_list:
+                    value = result.get(field)
+                    if value not in (None, ""):
+                        entry[field] = value
+            else:
+                for field in default_field_order:
+                    value = result.get(field)
+                    if value not in (None, "") and field not in entry:
+                        entry[field] = value
+
+                content_value = result.get("content")
+                if content_value not in (None, ""):
+                    entry["content"] = content_value
+
+                chunk_value = result.get("chunk") or result.get("Chunk")
+                if chunk_value not in (None, ""):
+                    entry["chunk"] = chunk_value
+
+            if caption_requested:
+                captions = result.get("@search.captions") or []
+                caption_value: Optional[str] = None
+                if captions:
+                    first = captions[0]
+                    if hasattr(first, "highlights") or hasattr(first, "text"):
+                        highlight_text = (getattr(first, "highlights", "") or "").strip()
+                        caption_text = (getattr(first, "text", "") or "").strip()
+                    else:
+                        highlight_text = (first.get("highlights") or "").strip()
+                        caption_text = (first.get("text") or "").strip()
+                    if highlight_requested and highlight_text:
+                        caption_value = highlight_text
+                    elif highlight_requested and not highlight_text and caption_text:
+                        caption_value = caption_text
+                    elif not highlight_requested and caption_text:
+                        caption_value = caption_text
+                if caption_value:
+                    entry["@search.caption"] = caption_value
+
+            if include_scores:
+                score = result.get("@search.score")
+                if score is not None:
+                    entry["@search.score"] = score
+                reranker_score = result.get("@search.rerankerScore")
+                if reranker_score is not None:
+                    entry["@search.rerankerScore"] = reranker_score
+
+            if not entry:
+                # Ensure there is at least something to show
+                for key, value in result.items():
+                    if key.startswith("@"):
+                        continue
+                    if value not in (None, ""):
+                        entry[key] = value
+                if include_scores and "@search.score" not in entry:
+                    entry["@search.score"] = result.get("@search.score", 0)
+
+            formatted_results.append(entry)
 
         print(f"Formatted {len(formatted_results)} search results", file=sys.stderr)
         return formatted_results
