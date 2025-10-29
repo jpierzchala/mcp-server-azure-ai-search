@@ -73,7 +73,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                     "Azure `queryType` option. Use `simple` for standard lexical queries or `semantic` for "
                     "semantic re-ranking. Defaults to `AZURE_SEARCH_QUERY_TYPE` if provided."
                 ),
-                examples=["semantic", "simple"],
+                examples=["semantic", "simple", "full"],
             ),
         ] = None,
         semantic_configuration: Annotated[
