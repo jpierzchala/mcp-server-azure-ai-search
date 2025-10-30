@@ -26,10 +26,36 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 description=(
                     "Lexical search expression. Supports the Azure Search simple syntax including phrase "
                     "matching, logical operators, required (+), negation, and exact phrases. Leave empty when "
-                    "performing vector-only search."
+                    "performing vector-only search. Should be alligned with either Simple Query Parser or "
+                    "Full Lucene Query Parser depending on the query type."
+                    "Simple Query Parser Rules:"
+                    "A phrase search is an exact phrase enclosed in quotation marks \" \"."
+                    "Boolean operators are: + (AND), - (NOT), | (OR)."
+                    "Starts with: lingui* will match on linguistic or linguini"
+                    "Full Lucene Query Parser Rules:"
+                    "Boolean operators are: AND, OR, NOT."
+                    "You can define a fielded search operation with the fieldName:searchExpression"
+                    "To do a fuzzy search, use the tilde ~ symbol at the end of a single word with an optional "
+                    "parameter, a number between 0 and 2 (default), that specifies the edit distance. For example,"
+                    "blue~ or blue~1 would return blue, blues, and glue."
+                    "Proximity searches are used to find terms that are near each other in a document. Insert a "
+                    "tilde ~ symbol at the end of a phrase followed by the number of words that create the proximity"
+                    "boundary. For example, \"hotel airport\"~5 finds the terms hotel and airport within five words of"
+                    "each other in a document."
+                    "rock^2 electronic boosts documents that contain the search terms in the genre field higher than"
+                    "other searchable fields in the index."
+                    "A regular expression search finds a match based on patterns that are valid under Apache Lucene"
+                    "In Azure AI Search, a regular expression is: Enclosed between forward slashes / and lower-case only."
+                    "You can use generally recognized syntax for multiple (*) or single (?) character wildcard searches. "
+                    "Full Lucene syntax supports prefix and infix matching."
                 ),
                 examples=[
-                    '"firmware developer" AND ("c++" OR "embedded")',
+                    'motel+(wifi|luxury)',
+                    'artists:("Miles Davis" "John Coltrane")',
+                    '/[mh]otel/',
+                    'hotelAmenities:(gym+(wifi|pool))',
+                    '"firmware developer" AND ("c++" OR "embedded") NOT "leadership"'
+
                 ],
             ),
         ],
@@ -44,7 +70,9 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 default=None,
                 description=(
                     "Vector descriptors. Provide each vector as either a plain string (text only) or a list "
-                    "containing `[text, optional k, optional weight]`. Strings can also be supplied one per line."
+                    "containing `[text, optional k-Number of nearest neighbors to return as top hits, optional"
+                    "weight-Relative weight of the vector query when compared to other vector query and/or the" 
+                    "text query within the same search request.]`. Strings can also be supplied one per line."
                 ),
                 examples=[
                     [
@@ -60,8 +88,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             Field(
                 default=None,
                 description=(
-                    "Fields to include in the response. Accepts a comma-separated string or list. Defaults to "
-                    "`AZURE_SEARCH_SELECT_FIELDS` when set."
+                    "Fields to include in the response. Accepts a comma-separated string or list"
                 ),
             ),
         ] = None,
@@ -71,7 +98,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 default=None,
                 description=(
                     "Azure `queryType` option. Use `simple` for standard lexical queries or `semantic` for "
-                    "semantic re-ranking. Defaults to `AZURE_SEARCH_QUERY_TYPE` if provided."
+                    "semantic re-ranking."
                 ),
                 examples=["semantic", "simple", "full"],
             ),
@@ -81,8 +108,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             Field(
                 default=None,
                 description=(
-                    "Semantic configuration to use. Required unless `AZURE_SEARCH_SEMANTIC_CONFIGURATION` is set "
-                    "in the environment."
+                    "Semantic configuration to use."
                 ),
             ),
         ] = None,
@@ -130,6 +156,11 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 description=(
                     "Optional facets to request. Provide comma-separated names or a list of facet expressions."
                 ),
+                examples=[
+                    "DomainUserLogin",
+                    "DomainUserLogin,count:10",
+                    "DomainUserLogin,count:10,sort:desc",
+                ],
             ),
         ] = None,
         vector_filter_mode: Annotated[
