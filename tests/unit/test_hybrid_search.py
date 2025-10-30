@@ -36,6 +36,7 @@ def mocked_server(monkeypatch):
     monkeypatch.setenv("AZURE_SEARCH_SELECT_FIELDS", "chunk,FullName")
     monkeypatch.setenv("AZURE_SEARCH_VECTOR_DEFAULT_K", "55")
     monkeypatch.setenv("AZURE_SEARCH_VECTOR_DEFAULT_WEIGHT", "1.1")
+    monkeypatch.setenv("AZURE_SEARCH_QUERY_LANGUAGE", "en-US")
 
     fake_results = FakePaged(
         items=[
@@ -79,6 +80,8 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
         count=True,
         select_fields=["chunk", "FullName"],
         query_type="semantic",
+        query_language="en-US",
+        query_rewrites="generative|count-7",
         semantic_configuration=None,
         captions="extractive|highlight-true",
         answers="extractive|count-3",
@@ -91,9 +94,11 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
         vector_fields=[],
         vector_ks=[60, 40],
         vector_weights=[2.0, 1.5],
+        vector_rewrites=["generative|count-3", None],
         vector_default_k=None,
         vector_default_weight=None,
         include_scores=False,
+        debug="queryRewrites",
     )
 
     call_kwargs = mock_instance.search.call_args.kwargs
@@ -101,7 +106,7 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert call_kwargs["search_text"] == "firmware engineer"
     assert call_kwargs["semantic_configuration_name"] == "semantic-config"
     assert call_kwargs["include_total_count"] is True
-    assert call_kwargs["search_mode"] == "all"
+    assert call_kwargs["search_mode"] == "any"
     assert call_kwargs["top"] == 15
     assert call_kwargs["query_caption"] == "extractive"
     assert call_kwargs["query_caption_highlight_enabled"] is True
@@ -116,6 +121,9 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert call_kwargs["facets"] == ["DomainUserLogin,count:10"]
     assert call_kwargs["vector_filter_mode"] == "preFilter"
     assert call_kwargs["skip"] == 5
+    assert call_kwargs["query_language"] == "en-US"
+    assert call_kwargs["query_rewrites"] == "generative|count-7"
+    assert call_kwargs["debug"] == "queryRewrites"
 
     vector_queries = call_kwargs["vector_queries"]
     assert len(vector_queries) == 2
@@ -123,12 +131,95 @@ def test_hybrid_search_builds_expected_payload(mocked_server):
     assert vector_queries[0].k_nearest_neighbors == 60
     assert vector_queries[0].weight == 2.0
     assert vector_queries[0].fields == "text_vector"
+    assert vector_queries[0].query_rewrites == "generative|count-3"
     assert vector_queries[1].text == "firmware developer"
     assert vector_queries[1].k_nearest_neighbors == 40
     assert vector_queries[1].weight == 1.5
+    assert vector_queries[1].query_rewrites is None
 
     assert payload["count"] == fake_results.count
     assert len(payload["items"]) == len(fake_results.items)
+
+
+def test_hybrid_search_preserves_facets_string(mocked_server):
+    module, _, mock_instance, _ = mocked_server
+
+    client = module.AzureSearchClient()
+
+    client.hybrid_search(
+        search_text="firmware engineer",
+        vector_texts=[],
+        top=5,
+        skip=None,
+        count=False,
+        select_fields=None,
+        query_type="simple",
+        query_language=None,
+        query_rewrites=None,
+        semantic_configuration=None,
+        captions=None,
+        answers=None,
+        filter_expression=None,
+        order_by=None,
+        facets="DomainUserLogin,count:10,sort:desc\nLocation,count:5",
+        vector_filter_mode=None,
+        search_mode=None,
+        search_fields=None,
+        vector_fields=None,
+        vector_ks=[],
+        vector_weights=[],
+        vector_rewrites=[],
+        vector_default_k=None,
+        vector_default_weight=None,
+        include_scores=False,
+        debug=None,
+    )
+
+    call_kwargs = mock_instance.search.call_args.kwargs
+    assert call_kwargs["facets"] == [
+        "DomainUserLogin,count:10,sort:desc",
+        "Location,count:5",
+    ]
+
+
+def test_hybrid_search_requires_query_language_for_semantic(mocked_server, monkeypatch):
+    module, _, _, _ = mocked_server
+
+    monkeypatch.delenv("AZURE_SEARCH_QUERY_LANGUAGE", raising=False)
+
+    client = module.AzureSearchClient()
+
+    with pytest.raises(ValueError) as exc:
+        client.hybrid_search(
+            search_text="firmware",
+            vector_texts=[],
+            top=5,
+            skip=None,
+            count=False,
+            select_fields=["chunk"],
+            query_type="semantic",
+            query_language=None,
+            query_rewrites=None,
+            semantic_configuration=None,
+            captions=None,
+            answers=None,
+            filter_expression=None,
+            order_by=None,
+            facets=None,
+            vector_filter_mode=None,
+            search_mode="all",
+            search_fields=["chunk"],
+            vector_fields=["text_vector"],
+            vector_ks=[],
+            vector_weights=[],
+            vector_rewrites=[],
+            vector_default_k=None,
+            vector_default_weight=None,
+            include_scores=False,
+            debug=None,
+        )
+
+    assert "Query language is required" in str(exc.value)
 
 
 def test_hybrid_search_requires_semantic_configuration(mocked_server, monkeypatch):
@@ -147,17 +238,25 @@ def test_hybrid_search_requires_semantic_configuration(mocked_server, monkeypatc
             count=False,
             select_fields=["chunk"],
             query_type="semantic",
+            query_language="en-US",
+            query_rewrites=None,
             semantic_configuration=None,
             captions=None,
             answers=None,
+            filter_expression=None,
+            order_by=None,
+            facets=None,
+            vector_filter_mode=None,
             search_mode="all",
             search_fields=["chunk"],
             vector_fields=["text_vector"],
             vector_ks=[],
             vector_weights=[],
+            vector_rewrites=[],
             vector_default_k=None,
             vector_default_weight=None,
             include_scores=False,
+            debug=None,
         )
 
     assert "Semantic configuration" in str(exc.value)

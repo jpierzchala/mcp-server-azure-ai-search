@@ -12,6 +12,7 @@ from azure.search.documents.models import VectorizableTextQuery  # type: ignore[
 
 from .utils import (
     _coalesce,
+    _ensure_list_of_facets,
     _ensure_list_of_floats,
     _ensure_list_of_ints,
     _ensure_list_of_strings,
@@ -65,6 +66,9 @@ class AzureSearchClient:
         self.default_select_fields = _ensure_list_of_strings(os.getenv("AZURE_SEARCH_SELECT_FIELDS"))
         self.default_query_type = os.getenv("AZURE_SEARCH_QUERY_TYPE")
         self.default_search_mode = os.getenv("AZURE_SEARCH_SEARCH_MODE", "all")
+        self.default_query_language = os.getenv("AZURE_SEARCH_QUERY_LANGUAGE")
+        self.default_query_rewrites = os.getenv("AZURE_SEARCH_QUERY_REWRITES") or "generative|count-5"
+        self.default_debug = os.getenv("AZURE_SEARCH_DEBUG")
         self.default_vector_k = _coalesce(
             _try_parse_int(os.getenv("AZURE_SEARCH_VECTOR_DEFAULT_K")),
             60,
@@ -110,6 +114,8 @@ class AzureSearchClient:
         count: bool,
         select_fields: Optional[Sequence[str]],
         query_type: Optional[str],
+        query_language: Optional[str],
+        query_rewrites: Optional[str],
         semantic_configuration: Optional[str],
         captions: Optional[str],
         answers: Optional[str],
@@ -122,9 +128,11 @@ class AzureSearchClient:
         vector_fields: Optional[Sequence[str]],
         vector_ks: Sequence[Optional[int]],
         vector_weights: Sequence[Optional[float]],
+        vector_rewrites: Sequence[Optional[str]],
         vector_default_k: Optional[int],
         vector_default_weight: Optional[float],
         include_scores: bool,
+        debug: Optional[str],
     ) -> Dict[str, Any]:
         """Perform search with granular configuration support."""
 
@@ -163,10 +171,16 @@ class AzureSearchClient:
         effective_select_fields = list(select_fields) if select_fields else list(self.default_select_fields)
 
         effective_query_type = query_type or self.default_query_type
+        effective_query_language = query_language.strip() if isinstance(query_language, str) and query_language.strip() else self.default_query_language
+        effective_query_rewrites = query_rewrites.strip() if isinstance(query_rewrites, str) and query_rewrites.strip() else self.default_query_rewrites
+        effective_debug = debug.strip() if isinstance(debug, str) and debug.strip() else self.default_debug
 
         effective_search_mode = (search_mode or self.default_search_mode or "all").lower()
         if has_lexical and effective_search_mode not in {"any", "all"}:
             raise ValueError("`search_mode` must be either 'any' or 'all'.")
+
+        if effective_query_type == "semantic" and effective_query_rewrites and effective_search_mode != "any":
+            effective_search_mode = "any"
 
         effective_vector_default_k = _coalesce(vector_default_k, self.default_vector_k, 60)
         effective_vector_default_weight = _coalesce(vector_default_weight, self.default_vector_weight, 1.0)
@@ -198,14 +212,26 @@ class AzureSearchClient:
         if has_vectors:
             vector_field_value = _vector_field_selector(effective_vector_fields)
             for idx, text in enumerate(normalized_vector_texts):
+                per_vector_rewrites = vector_rewrites[idx] if idx < len(vector_rewrites) else None
+                if (
+                    not per_vector_rewrites
+                    and effective_query_type == "semantic"
+                    and effective_query_rewrites
+                    and has_lexical
+                    and text.lower() == lexical_query.lower()
+                ):
+                    per_vector_rewrites = effective_query_rewrites
                 vector_queries.append(
                     VectorizableTextQuery(
                         text=text,
                         fields=vector_field_value,
                         k_nearest_neighbors=resolved_vector_ks[idx],
                         weight=resolved_vector_weights[idx],
+                        query_rewrites=per_vector_rewrites,
                     )
                 )
+
+        facet_values = _ensure_list_of_facets(facets)
 
         search_kwargs: Dict[str, Any] = {
             "top": top,
@@ -236,6 +262,19 @@ class AzureSearchClient:
         if effective_query_type:
             search_kwargs["query_type"] = effective_query_type
 
+        if effective_query_type == "semantic":
+            if not effective_query_language:
+                raise ValueError(
+                    "Query language is required for semantic queries. Provide `query_language` or set `AZURE_SEARCH_QUERY_LANGUAGE`."
+                )
+            search_kwargs["query_language"] = effective_query_language
+            search_kwargs["query_rewrites"] = effective_query_rewrites
+        else:
+            if query_language:
+                search_kwargs["query_language"] = query_language
+            if query_rewrites:
+                search_kwargs["query_rewrites"] = query_rewrites
+
         caption_preferences = {"requested": False, "highlight": False}
         if captions:
             caption_kwargs, highlight_requested = _parse_semantic_captions(captions)
@@ -251,11 +290,14 @@ class AzureSearchClient:
         if order_by:
             search_kwargs["order_by"] = list(order_by)
 
-        if facets:
-            search_kwargs["facets"] = list(facets)
+        if facet_values:
+            search_kwargs["facets"] = facet_values
 
         if vector_filter_mode:
             search_kwargs["vector_filter_mode"] = vector_filter_mode
+
+        if effective_debug:
+            search_kwargs["debug"] = effective_debug
 
         print(f"Search payload: {search_kwargs}", file=sys.stderr)
 
@@ -281,6 +323,13 @@ class AzureSearchClient:
             applied_payload["search_mode"] = effective_search_mode
             applied_payload["search_fields"] = search_fields_value
             applied_payload["query_type"] = effective_query_type
+            if effective_query_type == "semantic":
+                applied_payload["query_language"] = effective_query_language
+                applied_payload["query_rewrites"] = effective_query_rewrites
+            elif query_language:
+                applied_payload["query_language"] = query_language
+            if query_rewrites:
+                applied_payload["query_rewrites"] = query_rewrites
         if select_value:
             applied_payload["select"] = select_value
         if has_vectors:
@@ -293,12 +342,14 @@ class AzureSearchClient:
                     "vector_weights": resolved_vector_weights,
                 }
             )
-        if facets:
-            applied_payload["facets"] = list(facets)
+        if facet_values:
+            applied_payload["facets"] = facet_values
         if vector_filter_mode:
             applied_payload["vector_filter_mode"] = vector_filter_mode
         if skip:
             applied_payload["skip"] = skip
+        if effective_debug:
+            applied_payload["debug"] = effective_debug
 
         try:
             facets_result = results_page.get_facets()  # type: ignore[attr-defined]

@@ -9,6 +9,7 @@ from pydantic import Field  # type: ignore[import]
 
 from ..formatting import format_results
 from ..utils import (
+    _ensure_list_of_facets,
     _ensure_list_of_strings,
     _normalize_vector_descriptors,
 )
@@ -26,8 +27,8 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 description=(
                     "Lexical search expression. Supports the Azure Search simple syntax including phrase "
                     "matching, logical operators, required (+), negation, and exact phrases. Leave empty when "
-                    "performing vector-only search. Should be alligned with either Simple Query Parser or "
-                    "Full Lucene Query Parser depending on the query type."
+                    "performing vector-only search. Should be alligned with either Simple Query Parser,"
+                    "Full Lucene Query Parser or be a Semantic Query depending on the query type."
                     "Simple Query Parser Rules:"
                     "A phrase search is an exact phrase enclosed in quotation marks \" \"."
                     "Boolean operators are: + (AND), - (NOT), | (OR)."
@@ -48,13 +49,18 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                     "In Azure AI Search, a regular expression is: Enclosed between forward slashes / and lower-case only."
                     "You can use generally recognized syntax for multiple (*) or single (?) character wildcard searches. "
                     "Full Lucene syntax supports prefix and infix matching."
+                    "Semantic Query Rules:"
+                    "Natural language queries"
+                    
                 ),
                 examples=[
                     'motel+(wifi|luxury)',
                     'artists:("Miles Davis" "John Coltrane")',
                     '/[mh]otel/',
                     'hotelAmenities:(gym+(wifi|pool))',
-                    '"firmware developer" AND ("c++" OR "embedded") NOT "leadership"'
+                    '"firmware developer" AND ("c++" OR "embedded") NOT "leadership"',
+                    'C firmware developer with 10 years of experience',
+
 
                 ],
             ),
@@ -63,20 +69,19 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             Optional[
                 Union[
                     str,
-                    List[Union[str, List[Union[str, int, float]]]],
+                    List[Union[str, List[Union[str, int, float, str]]]],
                 ]
             ],
             Field(
                 default=None,
                 description=(
                     "Vector descriptors. Provide each vector as either a plain string (text only) or a list "
-                    "containing `[text, optional k-Number of nearest neighbors to return as top hits, optional"
-                    "weight-Relative weight of the vector query when compared to other vector query and/or the" 
-                    "text query within the same search request.]`. Strings can also be supplied one per line."
+                    "containing `[text, optional k, optional weight, optional query_rewrites]`. Strings can also be "
+                    "supplied one per line."
                 ),
                 examples=[
                     [
-                        ["C or C++ software engineer...", 60, 2.0],
+                        ["C or C++ software engineer...", 60, 2.0, "generative|count-3"],
                         ["Embedded systems and hardware...", None, 1.3],
                         "Programista C/C++ ...",
                     ]
@@ -103,12 +108,35 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 examples=["semantic", "simple", "full"],
             ),
         ] = None,
+        query_language: Annotated[
+            Optional[str],
+            Field(
+                default=None,
+                description=(
+                    "Query language (for semantic queries). Provide an IETF language tag such as `en-US`. Required when "
+                    "`query_type` is `semantic` unless `AZURE_SEARCH_QUERY_LANGUAGE` is set."
+                ),
+                examples=["en-US", "pl-PL"],
+            ),
+        ] = None,
+        query_rewrites: Annotated[
+            Optional[str],
+            Field(
+                default=None,
+                description=(
+                    "Override for semantic query rewrites (e.g. `generative|count-5`). Defaults to `AZURE_SEARCH_QUERY_REWRITES` "
+                    "or `generative|count-5`."
+                ),
+                examples=["generative|count-5"],
+            ),
+        ] = None,
         semantic_configuration: Annotated[
             Optional[str],
             Field(
                 default=None,
                 description=(
-                    "Semantic configuration to use."
+                    "Semantic configuration to use. Required unless `AZURE_SEARCH_SEMANTIC_CONFIGURATION` is set "
+                    "in the environment."
                 ),
             ),
         ] = None,
@@ -154,12 +182,13 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             Field(
                 default=None,
                 description=(
-                    "Optional facets to request. Provide comma-separated names or a list of facet expressions."
+                    "Optional facets to request. Provide comma-separated names or a list of facet expressions using Azure AI Search syntax, e.g. `field,count:20` with optional `sort:count` (descending by frequency) or `sort:value` (ascending by value)."
                 ),
                 examples=[
                     "DomainUserLogin",
                     "DomainUserLogin,count:10",
-                    "DomainUserLogin,count:10,sort:desc",
+                    "DomainUserLogin,count:10,sort:count",
+                    "DomainUserLogin,count:10,sort:value",
                 ],
             ),
         ] = None,
@@ -181,6 +210,13 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 default=None,
                 ge=0,
                 description="Number of results to skip from the start of the result set (server-side pagination).",
+            ),
+        ] = None,
+        debug: Annotated[
+            Optional[str],
+            Field(
+                default=None,
+                description="Optional debug option, for example `queryRewrites`."
             ),
         ] = None,
         search_mode: Annotated[
@@ -273,6 +309,9 @@ def register_search_tool(mcp, get_search_client) -> Callable:
 
         vector_descriptors = _normalize_vector_descriptors(vectors)
         lexical_query = (search or "").strip()
+        query_language = query_language.strip() if isinstance(query_language, str) else None
+        query_rewrites = query_rewrites.strip() if isinstance(query_rewrites, str) else None
+        debug = debug.strip() if isinstance(debug, str) else None
 
         if not lexical_query and not vector_descriptors:
             return {
@@ -283,11 +322,12 @@ def register_search_tool(mcp, get_search_client) -> Callable:
         vector_text_list = [item[0] for item in vector_descriptors]
         vector_k_list = [item[1] for item in vector_descriptors]
         vector_weight_list = [item[2] for item in vector_descriptors]
+        vector_rewrites_list = [item[3] for item in vector_descriptors]
         search_fields_list = _ensure_list_of_strings(search_fields)
         select_fields_list = _ensure_list_of_strings(select)
         vector_fields_list = _ensure_list_of_strings(vector_fields)
         order_by_list = _ensure_list_of_strings(order_by)
-        facet_list = _ensure_list_of_strings(facets)
+        facet_list = _ensure_list_of_facets(facets)
 
         payload = search_client.hybrid_search(
             search_text=lexical_query,
@@ -297,6 +337,8 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             count=count,
             select_fields=select_fields_list,
             query_type=query_type,
+            query_language=query_language,
+            query_rewrites=query_rewrites,
             semantic_configuration=semantic_configuration,
             captions=captions,
             answers=answers,
@@ -309,9 +351,11 @@ def register_search_tool(mcp, get_search_client) -> Callable:
             vector_fields=vector_fields_list,
             vector_ks=vector_k_list,
             vector_weights=vector_weight_list,
+            vector_rewrites=vector_rewrites_list,
             vector_default_k=vector_default_k,
             vector_default_weight=vector_default_weight,
             include_scores=include_scores,
+            debug=debug,
         )
 
         try:

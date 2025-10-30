@@ -56,6 +56,37 @@ def _ensure_list_of_strings(value: Optional[Union[str, Sequence[Any]]]) -> List[
     return _normalize_sequence(value, cast=lambda item: str(item).strip())
 
 
+def _ensure_list_of_facets(value: Optional[Union[str, Sequence[Any]]]) -> List[str]:
+    """Normalize facets into a list while preserving comma-delimited options."""
+
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+
+        if stripped.startswith("[") and stripped.endswith("]"):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, (list, tuple, set)):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+
+        lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+        if lines:
+            return lines
+
+        return [stripped]
+
+    return [str(value).strip()]
+
+
 def _ensure_list_of_ints(value: Optional[Union[str, Sequence[Any]]]) -> List[int]:
     """Normalize value into list of integers."""
 
@@ -90,15 +121,20 @@ def _vector_field_selector(values: Sequence[str]) -> str:
 
 def _normalize_vector_descriptors(
     value: Optional[Union[str, Sequence[Any]]]
-) -> List[tuple[str, Optional[int], Optional[float]]]:
-    """Normalize vector inputs into (text, k, weight) tuples."""
+) -> List[tuple[str, Optional[int], Optional[float], Optional[str]]]:
+    """Normalize vector inputs into (text, k, weight, query_rewrites) tuples."""
 
-    descriptors: List[tuple[str, Optional[int], Optional[float]]] = []
+    descriptors: List[tuple[str, Optional[int], Optional[float], Optional[str]]] = []
 
-    def _record(text: str, k: Optional[int] = None, weight: Optional[float] = None) -> None:
+    def _record(
+        text: str,
+        k: Optional[int] = None,
+        weight: Optional[float] = None,
+        query_rewrites: Optional[str] = None,
+    ) -> None:
         stripped = text.strip()
         if stripped:
-            descriptors.append((stripped, k, weight))
+            descriptors.append((stripped, k, weight, query_rewrites.strip() if isinstance(query_rewrites, str) and query_rewrites.strip() else None))
 
     def _parse_entry(entry: Any) -> None:
         if entry is None:
@@ -129,6 +165,7 @@ def _normalize_vector_descriptors(
 
             k_value: Optional[int] = None
             weight_value: Optional[float] = None
+            rewrites_value: Optional[str] = None
 
             if len(entry) > 1 and entry[1] not in (None, ""):
                 try:
@@ -148,7 +185,10 @@ def _normalize_vector_descriptors(
                         file=sys.stderr,
                     )
 
-            _record(text, k_value, weight_value)
+            if len(entry) > 3 and entry[3] not in (None, ""):
+                rewrites_value = str(entry[3]).strip()
+
+            _record(text, k_value, weight_value, rewrites_value)
             return
 
         _record(str(entry))

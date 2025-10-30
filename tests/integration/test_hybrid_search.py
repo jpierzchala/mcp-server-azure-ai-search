@@ -44,12 +44,14 @@ def test_hybrid_search_smoke(hybrid_server_module):
 
     payload = module.search_client.hybrid_search(
         search_text="embedded firmware engineer",
-        vector_texts=["Embedded systems developer"],
+        vector_texts=["embedded firmware engineer"],
         top=1,
         skip=None,
         count=False,
         select_fields=[],
         query_type="semantic",
+        query_language=os.getenv("AZURE_SEARCH_QUERY_LANGUAGE", "en-US"),
+        query_rewrites=None,
         semantic_configuration=os.getenv("AZURE_SEARCH_SEMANTIC_CONFIGURATION"),
         captions="extractive|highlight-true",
         answers="extractive|count-1",
@@ -62,12 +64,32 @@ def test_hybrid_search_smoke(hybrid_server_module):
         vector_fields=vector_fields,
         vector_ks=[],
         vector_weights=[],
+        vector_rewrites=[],
         vector_default_k=None,
         vector_default_weight=None,
         include_scores=False,
+        debug=None,
     )
 
     assert isinstance(payload, dict)
     assert "items" in payload
+
+
+def test_search_tool_semantic(hybrid_server_module):
+    module = hybrid_server_module
+
+    payload = module.search(
+        search="embedded firmware engineer",
+        vectors=None,
+        top=1,
+        skip=None,
+        query_type="semantic",
+        query_language=os.getenv("AZURE_SEARCH_QUERY_LANGUAGE", "en-US"),
+        semantic_configuration=os.getenv("AZURE_SEARCH_SEMANTIC_CONFIGURATION"),
+        include_scores=False,
+    )
+
+    assert isinstance(payload, dict)
+    assert payload.get("items") is not None
 
 
