@@ -146,7 +146,7 @@ def register_search_tool(mcp, get_search_client) -> Callable:
                 default=None,
                 description=(
                     "Captions behavior, for example `extractive|highlight-true`. Leave empty to disable extractive "
-                    "captions."
+                    "captions. Captions only work with semantic queries."
                 ),
             ),
         ] = None,
