@@ -237,3 +237,8 @@ wsproto==1.2.0
 yarl==1.18.3
 zipp==3.21.0
 zstandard==0.23.0
+
+# Testing (optional)
+pytest
+pytest-asyncio
+pytest-cov

@@ -1,0 +1,46 @@
+"""Core implementation for the Azure Search MCP server.
+
+This package houses the supporting modules that the public
+`azure_search_server` wrapper re-exports. Moving the logic here keeps the
+entrypoint lightweight while providing clearer separation of concerns.
+"""
+
+from . import runtime
+from .client import AzureSearchClient
+from .formatting import format_results
+from .runtime import initialize_runtime, run_server
+from .utils import (
+    _coalesce,
+    _ensure_list_of_floats,
+    _ensure_list_of_ints,
+    _ensure_list_of_strings,
+    _list_to_field_value,
+    _normalize_sequence,
+    _parse_semantic_answers,
+    _parse_semantic_captions,
+    _try_parse_float,
+    _try_parse_int,
+    _vector_field_selector,
+)
+from .tools.search import register_search_tool
+
+__all__ = [
+    "AzureSearchClient",
+    "format_results",
+    "initialize_runtime",
+    "run_server",
+    "register_search_tool",
+    "_coalesce",
+    "_ensure_list_of_floats",
+    "_ensure_list_of_ints",
+    "_ensure_list_of_strings",
+    "_list_to_field_value",
+    "_normalize_sequence",
+    "_parse_semantic_answers",
+    "_parse_semantic_captions",
+    "_try_parse_float",
+    "_try_parse_int",
+    "_vector_field_selector",
+    "runtime",
+]
+
