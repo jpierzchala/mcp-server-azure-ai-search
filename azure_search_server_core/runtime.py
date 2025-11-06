@@ -51,7 +51,18 @@ def run_server(mcp: FastMCP) -> None:
         except Exception as exc:  # pragma: no cover - defensive logging
             print(f"Warning: failed to set host/port on settings: {exc}", file=sys.stderr)
         print(f"Running MCP server over SSE on {host}:{port}", file=sys.stderr)
-        mcp.run(transport="sse")
+        try:
+            mcp.run(transport="sse")
+        except TypeError as exc:
+            message = str(exc)
+            if "missing" in message and "argument" in message:
+                print(
+                    "FastMCP.run requires explicit host/port; retrying with legacy signature",
+                    file=sys.stderr,
+                )
+                mcp.run(transport="sse", host=host, port=port)  # type: ignore[call-arg]
+            else:
+                raise
     else:
         print("Running MCP server over stdio", file=sys.stderr)
         mcp.run()
